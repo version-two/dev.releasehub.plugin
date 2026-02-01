@@ -1,0 +1,39 @@
+# Dart/Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+pubspec.lock
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated
+*.g.dart
+*.freezed.dart
+
+# Android
+example/android/.gradle/
+example/android/local.properties
+example/android/app/build/
+example/android/build/
+example/android/gradlew
+example/android/gradlew.bat
+example/android/gradle/wrapper/gradle-wrapper.jar
+
+# iOS (if added later)
+example/ios/Pods/
+example/ios/.symlinks/
+example/ios/Flutter/ephemeral/
+
+# Coverage
+coverage/

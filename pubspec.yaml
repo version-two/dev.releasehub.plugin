@@ -1,0 +1,36 @@
+name: releasehub_updater
+description: A fully configurable auto-update plugin for Flutter apps. Supports checking for updates, downloading APKs, and triggering installation on Android. Framework-agnostic.
+version: 1.0.1
+homepage: https://releasehub.dev
+repository: https://github.com/version-two/dev.releasehub.autoupdater
+issue_tracker: https://github.com/version-two/dev.releasehub.autoupdater/issues
+
+topics:
+  - auto-update
+  - updater
+  - apk
+  - android
+
+environment:
+  sdk: ^3.6.0
+  flutter: ">=3.0.0"
+
+platforms:
+  android:
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.2
+  package_info_plus: ^9.0.0
+  path_provider: ^2.1.5
+  open_filex: ^4.5.0
+  permission_handler: ^12.0.1
+  # GetX is only used if you import autoupdater_getx.dart
+  # The main autoupdater.dart uses vanilla Flutter only
+  get: ^4.6.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
