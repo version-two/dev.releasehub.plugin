@@ -2,8 +2,8 @@ name: releasehub_updater
 description: A fully configurable auto-update plugin for Flutter apps. Supports checking for updates, downloading APKs, and triggering installation on Android. Framework-agnostic.
 version: 1.0.1
 homepage: https://releasehub.dev
-repository: https://github.com/version-two/dev.releasehub.autoupdater
-issue_tracker: https://github.com/version-two/dev.releasehub.autoupdater/issues
+repository: https://github.com/version-two/dev.releasehub.plugin
+issue_tracker: https://github.com/version-two/dev.releasehub.plugin/issues
 
 topics:
   - auto-update
