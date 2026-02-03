@@ -200,6 +200,7 @@ class AutoUpdaterStandalone {
 
     if (!hasPermission) {
       ui?.onShowPermissionDenied?.call(context);
+      _completeDialogWait(); // Complete wait since we're not proceeding
       return;
     }
 
@@ -261,6 +262,8 @@ class AutoUpdaterStandalone {
       }
     } finally {
       isDownloading.value = false;
+      // Complete the dialog wait after download finishes (success or failure)
+      _completeDialogWait();
     }
   }
 
@@ -543,7 +546,7 @@ class AutoUpdaterDefaultUI {
               ElevatedButton(
                 onPressed: () {
                   Navigator.of(ctx).pop();
-                  onDialogDismissed?.call();
+                  // Don't call onDialogDismissed here - let download complete first
                   onDownload();
                 },
                 style: ElevatedButton.styleFrom(
