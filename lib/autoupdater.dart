@@ -56,8 +56,8 @@ library;
 
 import 'package:flutter/material.dart';
 
-import 'src/adapters/standalone_adapter.dart';
-import 'src/config.dart';
+import 'src/adapters/standalone_adapter.dart' show AutoUpdaterStandalone, AutoUpdaterDefaultUI, AutoUpdaterStrings;
+import 'src/config.dart' show AutoUpdaterConfig, UpdateAvailable;
 
 // Core exports
 export 'src/config.dart';
@@ -131,6 +131,7 @@ class AutoUpdater {
   /// [startupDelay] - Delay before startup check (default: 3 seconds)
   /// [primaryColor] - Color for UI elements (default: teal)
   /// [strings] - Custom strings for localization
+  /// [iosAppStoreUrl] - iOS App Store URL for the app (for iOS update notifications)
   ///
   /// Example:
   /// ```dart
@@ -138,6 +139,15 @@ class AutoUpdater {
   ///   baseUrl: 'https://app.v2.sk',
   ///   projectSlug: 'my-app',
   ///   channel: 'stable',
+  /// );
+  /// ```
+  ///
+  /// With iOS App Store link:
+  /// ```dart
+  /// await AutoUpdater.init(
+  ///   baseUrl: 'https://app.v2.sk',
+  ///   projectSlug: 'my-app',
+  ///   iosAppStoreUrl: 'https://apps.apple.com/app/id123456789',
   /// );
   /// ```
   ///
@@ -161,6 +171,7 @@ class AutoUpdater {
     Duration startupDelay = const Duration(seconds: 3),
     Color primaryColor = const Color(0xFF0D9488), // Teal
     AutoUpdaterStrings strings = const AutoUpdaterStrings(),
+    String? iosAppStoreUrl,
   }) async {
     if (_instance != null) {
       debugPrint('[AutoUpdater] Already initialized');
@@ -173,6 +184,7 @@ class AutoUpdater {
       channel: channel,
       checkOnStartup: checkOnStartup,
       startupDelay: startupDelay,
+      iosAppStoreUrl: iosAppStoreUrl,
     );
 
     _instance = AutoUpdaterStandalone(
@@ -273,6 +285,32 @@ class AutoUpdater {
     }
 
     await _instance!.checkForUpdate(silent: true);
+  }
+
+  /// Check for updates and wait for the dialog to be dismissed.
+  ///
+  /// This is useful for splash screens where you want to block navigation
+  /// until the user has interacted with the update dialog.
+  ///
+  /// Returns true if an update was available (dialog was shown), false otherwise.
+  static Future<bool> checkAndWaitForDialog() async {
+    if (_instance == null) {
+      debugPrint('[AutoUpdater] Not initialized. Call init() first.');
+      return false;
+    }
+
+    // Wait for navigator to be ready
+    if (_navigatorKey.currentState == null) {
+      debugPrint('[AutoUpdater] Navigator not ready yet, will retry in 1 second...');
+      await Future.delayed(const Duration(seconds: 1));
+      if (_navigatorKey.currentState == null) {
+        debugPrint('[AutoUpdater] Navigator still not ready. Skipping check.');
+        return false;
+      }
+    }
+
+    final result = await _instance!.checkForUpdate(silent: true, waitForDialog: true);
+    return result is UpdateAvailable;
   }
 
   /// Dispose of resources.

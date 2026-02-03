@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../config.dart';
 import '../core_service.dart';
@@ -37,6 +41,9 @@ import '../core_service.dart';
 class AutoUpdaterStandalone {
   final AutoUpdaterCore _core;
   final AutoUpdaterStandaloneUI? ui;
+
+  /// Completer that resolves when the update dialog is dismissed
+  Completer<void>? _updateDialogCompleter;
 
   /// Reactive state: whether currently checking for updates
   final ValueNotifier<bool> isCheckingForUpdate = ValueNotifier(false);
@@ -93,9 +100,11 @@ class AutoUpdaterStandalone {
   ///
   /// [silent] - If true, no UI feedback is shown for "no update" or errors.
   /// [context] - Required for showing dialogs if [ui] callbacks use it.
+  /// [waitForDialog] - If true, waits for the update dialog to be dismissed before returning.
   Future<UpdateCheckResult> checkForUpdate({
     bool silent = true,
     BuildContext? context,
+    bool waitForDialog = false,
   }) async {
     if (config.isDisabled) {
       config.log('Update check disabled');
@@ -117,11 +126,34 @@ class AutoUpdaterStandalone {
 
       switch (result) {
         case UpdateAvailable(versionInfo: final info):
-          ui?.onShowUpdateAvailable?.call(
-            context,
-            info,
-            () => downloadAndInstall(info, context: context),
-          );
+          // Create completer if we need to wait for dialog
+          if (waitForDialog) {
+            _updateDialogCompleter = Completer<void>();
+          }
+
+          // On iOS, show App Store or ReleaseHub link instead of download
+          if (Platform.isIOS) {
+            ui?.onShowUpdateAvailableIOS?.call(
+              context,
+              info,
+              config.iosAppStoreUrl,
+              config.releaseHubWebUrl,
+              waitForDialog ? () => _completeDialogWait() : null,
+            );
+          } else {
+            ui?.onShowUpdateAvailable?.call(
+              context,
+              info,
+              () => downloadAndInstall(info, context: context),
+              waitForDialog ? () => _completeDialogWait() : null,
+            );
+          }
+
+          // Wait for dialog to be dismissed if requested
+          if (waitForDialog && _updateDialogCompleter != null) {
+            await _updateDialogCompleter!.future;
+            _updateDialogCompleter = null;
+          }
         case NoUpdateAvailable():
           if (!silent) {
             ui?.onShowNoUpdateMessage?.call(context);
@@ -139,6 +171,13 @@ class AutoUpdaterStandalone {
       return result;
     } finally {
       isCheckingForUpdate.value = false;
+    }
+  }
+
+  /// Completes the dialog wait completer
+  void _completeDialogWait() {
+    if (_updateDialogCompleter != null && !_updateDialogCompleter!.isCompleted) {
+      _updateDialogCompleter!.complete();
     }
   }
 
@@ -284,13 +323,28 @@ class AutoUpdaterStandaloneUI {
   /// Called when an error occurs
   final void Function(BuildContext? context, String title, String message)? onShowError;
 
-  /// Called when an update is available.
+  /// Called when an update is available (Android).
   /// [onDownload] should be called to start the download.
+  /// [onDialogDismissed] should be called when the dialog is dismissed (for waitForDialog support).
   final void Function(
     BuildContext? context,
     VersionInfo info,
     VoidCallback onDownload,
+    VoidCallback? onDialogDismissed,
   )? onShowUpdateAvailable;
+
+  /// Called when an update is available on iOS.
+  /// Shows App Store link or ReleaseHub web link.
+  /// [appStoreUrl] - iOS App Store URL (if configured)
+  /// [releaseHubUrl] - ReleaseHub web URL to view the release
+  /// [onDialogDismissed] should be called when the dialog is dismissed (for waitForDialog support).
+  final void Function(
+    BuildContext? context,
+    VersionInfo info,
+    String? appStoreUrl,
+    String? releaseHubUrl,
+    VoidCallback? onDialogDismissed,
+  )? onShowUpdateAvailableIOS;
 
   /// Called to show permission dialog.
   /// Return true to proceed with permission request.
@@ -316,6 +370,7 @@ class AutoUpdaterStandaloneUI {
     this.onShowNoUpdateMessage,
     this.onShowError,
     this.onShowUpdateAvailable,
+    this.onShowUpdateAvailableIOS,
     this.onShowPermissionDialog,
     this.onShowPermissionDenied,
     this.onShowManualInstallRequired,
@@ -353,6 +408,11 @@ class AutoUpdaterStrings {
   final String checkFailed;
   final String downloadFailed;
 
+  // iOS specific strings
+  final String openAppStore;
+  final String viewOnReleaseHub;
+  final String iosUpdateMessage;
+
   const AutoUpdaterStrings({
     this.updateAvailable = 'Update Available',
     this.noUpdateAvailable = 'You are using the latest version',
@@ -373,6 +433,10 @@ class AutoUpdaterStrings {
     this.updatesDisabled = 'Updates are disabled',
     this.checkFailed = 'Update Check Failed',
     this.downloadFailed = 'Download Failed',
+    // iOS specific
+    this.openAppStore = 'Open App Store',
+    this.viewOnReleaseHub = 'View on ReleaseHub',
+    this.iosUpdateMessage = 'A new version is available. Please update from the App Store.',
   });
 }
 
@@ -450,7 +514,7 @@ class AutoUpdaterDefaultUI {
         showSnackBar(context, '$title: $message', Colors.red);
       },
 
-      onShowUpdateAvailable: (context, info, onDownload) {
+      onShowUpdateAvailable: (context, info, onDownload, onDialogDismissed) {
         showDialogHelper(
           context,
           (ctx) => AlertDialog(
@@ -470,12 +534,16 @@ class AutoUpdaterDefaultUI {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  onDialogDismissed?.call();
+                },
                 child: Text(strings.later),
               ),
               ElevatedButton(
                 onPressed: () {
                   Navigator.of(ctx).pop();
+                  onDialogDismissed?.call();
                   onDownload();
                 },
                 style: ElevatedButton.styleFrom(
@@ -484,6 +552,76 @@ class AutoUpdaterDefaultUI {
                 ),
                 child: Text(strings.download),
               ),
+            ],
+          ),
+        );
+      },
+
+      onShowUpdateAvailableIOS: (context, info, appStoreUrl, releaseHubUrl, onDialogDismissed) {
+        showDialogHelper(
+          context,
+          (ctx) => AlertDialog(
+            title: Text(strings.updateAvailable),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${strings.version} ${info.displayVersion}'),
+                const SizedBox(height: 8),
+                Text(
+                  appStoreUrl != null
+                      ? strings.iosUpdateMessage
+                      : 'A new version is available on ReleaseHub.',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                ),
+                if (info.releaseNotes != null) ...[
+                  const SizedBox(height: 16),
+                  Text(strings.releaseNotes, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text(info.releaseNotes!, style: const TextStyle(fontSize: 12)),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  onDialogDismissed?.call();
+                },
+                child: Text(strings.later),
+              ),
+              if (appStoreUrl != null)
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    onDialogDismissed?.call();
+                    final uri = Uri.parse(appStoreUrl);
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: Text(strings.openAppStore),
+                )
+              else if (releaseHubUrl != null)
+                ElevatedButton(
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    onDialogDismissed?.call();
+                    final uri = Uri.parse(releaseHubUrl);
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: Text(strings.viewOnReleaseHub),
+                ),
             ],
           ),
         );
